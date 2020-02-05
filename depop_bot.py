@@ -27,6 +27,7 @@ class Item(db_base):
     url = Column('url', String, unique=True)
     username = Column('username', String)
     price = Column('price', Integer)
+    size = Column('size', String)
     description = Column('description', String)
 
 engine = create_engine('sqlite:///golfwang.db', echo=False)
@@ -40,7 +41,7 @@ base_url = "https://www.depop.com"
 depop_search = "/search/?q=golf%20wang"
 
 # Set blank for first run through
-min_count = 0
+min_count= 0
 min_body = ""
 min_lastSent = time.time()
 
