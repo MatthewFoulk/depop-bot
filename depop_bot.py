@@ -19,10 +19,10 @@ def main():
     search_term = "golf wang"
 
     # Send emails to these addresses based on time request            
-    min_email = ['depopbot01@gmail.com']
+    min_email = ['depopbot01@gmail.com', 'jordanwesley2002@icloud.com', 'itsacookie12@gmail.com', 'brennan.fane@icloud.com']
     five_email = []
-    hour_email = ['depopbot01@gmail.com']
-    day_email = ['depopbot01@gmail.com']
+    hour_email = ['depopbot01@gmail.com', 'megan_powderlyy@hotmail.com']
+    day_email = ['depopbot01@gmail.com', 'Brandonnlee@icloud.com', 'Golfwangreportersv2@gmail.com', '0liv3r.bridg3@gmail.com']
 
 
     # Setting up database
