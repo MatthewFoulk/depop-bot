@@ -146,7 +146,7 @@ def main():
                 min_body = ""
 
             # Repeat previous steps for 5 minute emails
-            if five_body and five_email and (start_time - five_last_sent) >= 60:
+            if five_body and five_email and (start_time - five_last_sent) >= 300:
                 
                 five_last_sent = time.time()
 
@@ -158,7 +158,7 @@ def main():
                 five_body = ""
 
             # Repeat previous steps for hourly emails
-            if hour_body and hour_email and (start_time - hour_last_sent) >= 60:
+            if hour_body and hour_email and (start_time - hour_last_sent) >= 3600:
                 
                 hour_last_sent = time.time()
 
@@ -170,7 +170,7 @@ def main():
                 hour_body = ""
             
              # Repeat previous steps for daily emails
-            if day_body and day_email and (start_time - day_last_sent) >= 60:
+            if day_body and day_email and (start_time - day_last_sent) >= 86400:
                 
                 day_last_sent = time.time()
 
