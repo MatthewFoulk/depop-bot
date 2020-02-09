@@ -7,267 +7,363 @@ from sqlalchemy.dialects import postgresql
 import time
 import smtplib
 from email.mime.text import MIMEText
+import sys
 
-search_term = "Golf Wang"
+def main():
 
-# Send emails to these addresses based on time request            
-min_email = ['depopbot01@gmail.com', 'jordanwesley2002@icloud.com', 'itsacookie12@gmail.com', 'brennan.fane@icloud.com']
-five_email = []
-hour_email = ['depopbot01@gmail.com', 'megan_powderlyy@hotmail.com']
-day_email = ['depopbot01@gmail.com', 'Brandonnlee@icloud.com', 'Golfwangreportersv2@gmail.com', '0liv3r.bridg3@gmail.com']
+    if not len(sys.argv) == 2:
+        print("Missing password")
+        sys.exit()
+
+    # What search is being tracked on depop
+    search_term = "golf wang"
+
+    # Send emails to these addresses based on time request            
+    min_email = ['depopbot01@gmail.com']
+    five_email = []
+    hour_email = ['depopbot01@gmail.com']
+    day_email = ['depopbot01@gmail.com']
 
 
-# Setting up database
-db_base = declarative_base()
+    # Setting up database
+    db_base = declarative_base()
 
-class Item(db_base):
-    __tablename__ = "golf wang02"
+    # define columns of sql database and table name
+    class Item(db_base):
+        __tablename__ = search_term
 
-    id = Column('id', Integer, primary_key=True)
-    url = Column('url', String, unique=True)
-    username = Column('username', String)
-    price = Column('price', Integer)
-    size = Column('size', String)
-    description = Column('description', String)
+        id = Column('id', Integer, primary_key=True)
+        url = Column('url', String, unique=True)
+        username = Column('username', String)
+        price = Column('price', Integer)
+        size = Column('size', String)
+        description = Column('description', String)
 
-engine = create_engine('sqlite:///golfwang.db', echo=False)
-db_base.metadata.create_all(bind=engine)
-Session = sessionmaker(bind=engine)
+    # Configure engine and setup session
+    engine = create_engine('sqlite:///' + search_term + '.db', echo=False)
+    db_base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
 
-# Base url to build links from
-base_url = "https://www.depop.com"
+    # Building search url
+    base_url = "https://www.depop.com"
+    search_url = build_search(search_term)
 
-# Golf Wang search
-depop_search = "/search/?q=golf%20wang"
+    # Starting values for various time-related variables
+    min_count = five_count = hour_count = day_count = 0
+    min_body = five_body = hour_body = day_body = ""
 
-# Set blank for first run through
-min_count= 0
-min_body = ""
-min_lastSent = time.time()
+    # TODO may not need to have these in main method
+    min_last_sent = five_last_sent = hour_last_sent = day_last_sent = time.time()
 
-five_count = 0
-five_body = ""
-five_lastSent = time.time()
+    # Run script continuously
+    while True:
+        
+        # Time that script begins running each time through
+        start_time = time.time()
 
-hour_count = 0
-hour_body = ""
-hour_lastSent = time.time()
+        # Get search url response
+        base_response = get_search_response(base_url, search_url)
 
-day_count = 0
-day_body = ""
-day_lastSent = time.time()
+        # Parse reponse from search using beautiful soup and html parser
+        base_content = BeautifulSoup(base_response.content, "html.parser")
 
-# Run continuosly
-while True:
+        # start session
+        session = Session()
 
-    # Get current time for checks later with email, so it stays consistent
-    start_time = time.time()
+        # Scrape first item listings on search url
+        for listing in range(0,5):
 
-    # Retry fetching website info if failed first time
+            item = Item()
+
+            # Store listings url
+            item_url = base_content.find_all('a', attrs={"class":"styles__ProductCard-sc-5cfswk-2 YcaYq"})[listing]['href']
+
+            # Check if listing is new
+            if not check_exists(session, Item.url, item_url):
+                
+                # Add to database
+                item.url = item_url
+
+                # Increase each count by 1 for the new item 
+                min_count += 1 
+                five_count += 1
+                hour_count += 1
+                day_count += 1
+
+                # Get item listing url response
+                item_response = get_item_response(base_url, item_url)
+
+                # Parse item listing content
+                item_content = BeautifulSoup(item_response.content, "html.parser")
+
+                # Fetch and set item username
+                item.username = get_username(item_content)
+
+                # Fetch and set item price
+                item.price = get_price(item_content)
+
+                # Fetch and set item size
+                item.size = get_size(item_content)
+
+                # Fetch and set item description
+                item.description = get_description(item_content)
+
+                # Add new item to email body (This likely is currently vulnerable to SQL injection attacks... should look to fix)
+                min_body += f"Item {min_count} \nwww.depop.com{item.url} \nUsername: {item.username} \nPrice: {item.price} \nSize: {item.size} \nDescription: {item.description} \n\n"
+                five_body += f"item {five_count} \nwww.depop.com{item.url} \nUsername: {item.username} \nPrice: {item.price} \nSize: {item.size} \nDescription: {item.description} \n\n"
+                hour_body += f"item {hour_count} \nwww.depop.com{item.url} \nUsername: {item.username} \nPrice: {item.price} \nSize: {item.size} \nDescription: {item.description} \n\n"
+                day_body += f"item {day_count} \nwww.depop.com{item.url} \nUsername: {item.username} \nPrice: {item.price} \nSize: {item.size} \nDescription: {item.description} \n\n"
+
+                # Add item to database
+                session.add(item)
+
+        session.commit()
+        session.close()
+
+        # Setup secure connection for email
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.ehlo()
+            
+            # TODO replace password with sys.argv[1]
+            # Login into account, password is passed as the second cmd line argument
+            smtp.login('depopbot01@gmail.com', sys.argv[1])
+
+            # Send email to people asking for every minute updates if a minute has passed
+            # and new items where scraped (check min_body) and people exist (min_email)
+            if min_body and min_email and (start_time - min_last_sent) >= 60:
+                
+                # Update last sent time
+                min_last_sent = time.time()
+
+                # Build message
+                msg = get_min_msg(min_count, search_term, min_body)
+                
+                # Send email
+                smtp.sendmail('depopbot01@gmail.com', min_email, msg)
+
+                # Reset email body and item count
+                min_count = 0
+                min_body = ""
+
+            # Repeat previous steps for 5 minute emails
+            if five_body and five_email and (start_time - five_last_sent) >= 60:
+                
+                five_last_sent = time.time()
+
+                msg = get_five_msg(five_count, search_term, five_body)
+
+                smtp.sendmail('depopbot01@gmail.com', five_email, msg)
+
+                five_count = 0
+                five_body = ""
+
+            # Repeat previous steps for hourly emails
+            if hour_body and hour_email and (start_time - hour_last_sent) >= 60:
+                
+                hour_last_sent = time.time()
+
+                msg = get_hour_msg(hour_count, search_term, hour_body)
+
+                smtp.sendmail('depopbot01@gmail.com', hour_email, msg)
+
+                hour_count = 0
+                hour_body = ""
+            
+             # Repeat previous steps for daily emails
+            if day_body and day_email and (start_time - day_last_sent) >= 60:
+                
+                day_last_sent = time.time()
+
+                msg = get_day_msg(day_count, search_term, day_body)
+
+                smtp.sendmail('depopbot01@gmail.com', day_email, msg)
+
+                day_count = 0
+                day_body = ""
+
+        # Determine length of rest before running program again
+        get_rest_time(min_email, five_email, hour_email, day_email)
+
+
+
+# Build search portion of url using the search term
+def build_search(search_term):
+
+    # Initialize search url
+    search_url = "/search/?q="
+
+    # Count words/iterations
+    counter = 0
+
+    # Build the seach_url 
+    for word in search_term.split():
+
+        # Only add word if this is the first/only word
+        if counter == 0:
+            search_url += word
+
+        # Otherise add %20 before the word
+        else:
+            search_url += "%20" + word
+
+        # increase counter for each word
+        counter += 1
+    
+    return  search_url
+
+# Fetch the content from sarch url
+def get_search_response(base_url, search_url):
+
+    # Try three times if failed
     for attempt in range (0,3):
+
         try:
-            # Fetch content from Golf search
-            base_response = requests.get(base_url+depop_search, timeout=5)
-            break
+            base_response = requests.get(base_url + search_url, timeout=5)
+            return base_response
 
         # Handle timeout errors 
         except requests.exceptions.Timeout:
             print("Attempt: " + str(attempt) + " Failed")
             time.sleep(60)
 
+    # Break out of script if failure to get URL after 3 tries
+    sys.exit("Failed to get response from search url") 
 
-    # Parse content from search
-    base_content = BeautifulSoup(base_response.content, "html.parser")
+# Check if item already exists in database
+def check_exists(session, db_url, item_url):
+     return session.query(exists().where(db_url == item_url)).scalar()
 
-    session = Session()
+# Fetch the content from item url
+def get_item_response(base_url, item_url):
 
-    # Scrape first 5 items on depop
-    for listing in range(0,5):
+    try:
+        item_response = requests.get(base_url + item_url, timeout=5)
+        return item_response
 
-        item = Item()
-        
-        # Grab each items personal URL
-        item_url = base_content.find_all('a', attrs={"class":"styles__ProductCard-sc-5cfswk-2 YcaYq"})[listing]['href']
+    # Handle timeout errors
+    except requests.exceptions.Timeout:
+        print("Failed to get item urls information from: " + base_url + item_url)
 
-        item_exists = session.query(exists().where(Item.url == item_url))
+# Fetch item username
+def get_username(item_content):
 
-        if not item_exists.scalar():
+    # catch exception from no username (don't think this is possible)
+    try:
+        item_username = item_content.find('a', attrs={"class":"Link-sc-1urid-0 cuBKKA"}).text
+        return item_username
+    except AttributeError:
+        print("ERROR: Username could not be found")
+        return "N/A"
 
-            # Add url to db object
-            item.url = item_url
-
-            # Changed because new items
-            min_count += 1 
-            five_count += 1
-            hour_count += 1
-            day_count += 1
-
-            # Fetch item's page content
-            item_response = requests.get(base_url+item_url, timeout=5)
-            
-            # Parse item's page content
-            item_content = BeautifulSoup(item_response.content, "html.parser")
-            
-             # catch exception from no username (don't think this is possible)
-            try:
-                item_username = item_content.find('a', attrs={"class":"Link-sc-1urid-0 cuBKKA"}).text
-                item.username = item_username
-            except AttributeError:
-                print("ERROR: Username could not be found")
-                item.username = "N/A"
-
-            # Catch exemption thrown from discounted price
-            try:
-                item_price = item_content.find('span', attrs={"class":"Pricestyles__FullPrice-sc-1vj3zjr-0 bzlnel"}).text
-                item.price = item_price
-            except AttributeError:
-                try:
-                    item_price = item_content.find('span', attrs={"class":"Pricestyles__DiscountPrice-sc-1vj3zjr-1 cUPtYA"}).text
-                    item.price = item_price
-                except AttributeError:
-                    print("ERROR: Can't find PRICE")
-
-            # Catch exemption thrown for no size
-            try:
-                item_size = item_content.find('tr', attrs={"data-testid":"product__singleSize"}).findChild("td",attrs={"class":"TableCell-zjtqe7-0 fxiPRF"}).text
-                item.size = item_size
-            except AttributeError:
-                print("ERROR: No size for this item")
-                item.size = "N/A"
-
-            # Catch error thrown for no description
-            try:
-                item_description = item_content.find('p', attrs={"class":"Text-yok90d-0 styles__DescriptionContainer-uwktmu-9 gRfPzP"}).text
-                item.description = item_description
-            except AttributeError:
-                print("ERROR: No description found")
-                item.description = "N/A"
-
-            # Catch error thrown from unicode characters that can't be converted into ASCII
-            try:
-                item_description = item_description.encode('ascii', 'replace')
-                item_description = item_description.decode()
-            except UnicodeEncodeError:
-                item_description = item_description.encode('utf-8')
-
-            # Building up the body of the email sent based off when it will be sent
-            min_body += f"Item {min_count} \nwww.depop.com{item_url} \nUsername: {item_username} \nPrice: {item_price} \nSize: {item_size} \nDescription: {item_description} \n\n"
-            five_body += f"Item {five_count} \nwww.depop.com{item_url} \nUsername: {item_username} \nPrice: {item_price} \nSize: {item_size} \nDescription: {item_description} \n\n"
-            hour_body += f"Item {hour_count} \nwww.depop.com{item_url} \nUsername: {item_username} \nPrice: {item_price} \nSize: {item_size} \nDescription: {item_description} \n\n"
-            day_body += f"Item {day_count} \nwww.depop.com{item_url} \nUsername: {item_username} \nPrice: {item_price} \nSize: {item_size} \nDescription: {item_description} \n\n"
-
-            # Add item to database
-            session.add(item)
-    session.commit()
-
-    # Close session         
-    session.close()
-
-    with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
-        smtp.ehlo()
-        smtp.starttls()
-        smtp.ehlo()
-
-        smtp.login('depopbot01@gmail.com', 'b2VGZENnWjnq83')
-
-        if min_body and min_email and (start_time - min_lastSent) >= 60: 
-            min_lastSent = time.time()
-            
-            if min_count > 1:
-                subject = f"{search_term}: {min_count} new items"
-            else:
-                subject = f"{search_term}: {min_count} new item"
-            
-            min_body = "Please Provide Feedback: https://forms.gle/hEWHXaXJhrZFX7Dt6 \n\n" + min_body
-
-            msg = f'Subject: {subject}\n\n{min_body}'
-
-            smtp.sendmail('depopbot01@gmail.com', min_email, msg)
-
-            min_count = 0
-            min_body = "" 
-
-        if five_body and five_email and (start_time - five_lastSent) >= 300: 
-            five_lastSent = time.time()
-            
-            if five_count > 1:
-                subject = f"{search_term}: {five_count} new items"
-            else:
-                subject = f"{search_term}: {five_count} new item"
-
-            five_body = "Please Provide Feedback: https://forms.gle/hEWHXaXJhrZFX7Dt6 \n\n" + five_body
-
-            msg = f'Subject: {subject}\n\n{five_body}'
-
-            smtp.sendmail('depopbot01@gmail.com', five_email, msg)
-
-            five_count = 0
-            five_body = "" 
-        
-        if hour_body and hour_email and (start_time - hour_lastSent) >= 3600: 
-            hour_lastSent = time.time()
-            
-            if hour_count > 1:
-                subject = f"{search_term}: {hour_count} new items"
-            else:
-                subject = f"{search_term}: {hour_count} new item"
-
-            hour_body = "Please Provide Feedback: https://forms.gle/hEWHXaXJhrZFX7Dt6 \n\n" + hour_body
-
-            msg = f'Subject: {subject}\n\n{hour_body}'
-
-            smtp.sendmail('depopbot01@gmail.com', hour_email, msg)
-
-            hour_count = 0
-            hour_body = "" 
-
-        # TODO should I change this to send at a specific time of the day? That adds more complications...
-        if day_body and day_email and (start_time - day_lastSent) >= 86400: 
-            day_lastSent = time.time()
-            
-            if day_count > 1:
-                subject = f"{search_term}: {day_count} new items"
-            else:
-                subject = f"{search_term}: {day_count} new item"
-
-            day_body = "Please Provide Feedback: https://forms.gle/hEWHXaXJhrZFX7Dt6 \n\n" + day_body
-
-            msg = f'Subject: {subject}\n\n{day_body}'
-
-            smtp.sendmail('depopbot01@gmail.com', day_email, msg)
-
-            day_count = 0
-            day_body = ""
-
-    # Get end time of program to modify sleep time        
-    end_time = time.time()
-
-    # How long to wait before running script again based of email needs,
-    # And reset counts and email messages
-    if min_email:
+# Fetch item price
+def get_price(item_content):
+    
+    # Catch exemption thrown from discounted price
+    try:
+        item_price = item_content.find('span', attrs={"class":"Pricestyles__FullPrice-sc-1vj3zjr-0 bzlnel"}).text
+        return item_price
+    except AttributeError:
         try:
-            time.sleep(60 - (end_time - start_time))
-        except ValueError:
-            time.sleep(60)
+            item_price = item_content.find('span', attrs={"class":"Pricestyles__DiscountPrice-sc-1vj3zjr-1 cUPtYA"}).text
+            return item_price
+        except AttributeError:
+            print("ERROR: Can't find PRICE")
+            return "N/A"
+
+
+def get_size(item_content):
+
+    # Catch exemption thrown for no size
+    try:
+        item_size = item_content.find('tr', attrs={"data-testid":"product__singleSize"}).findChild("td",attrs={"class":"TableCell-zjtqe7-0 fxiPRF"}).text
+        return item_size
+    except AttributeError:
+        print("ERROR: No size for this item")
+        return "N/A"
+
+def get_description(item_content):
+
+     # Catch error thrown for no description
+    try:
+        item_description = item_content.find('p', attrs={"class":"Text-yok90d-0 styles__DescriptionContainer-uwktmu-9 gRfPzP"}).text
+        
+        # Catch error thrown from unicode characters that can't be converted into ASCII
+        try:
+            item_description = item_description.encode('ascii', 'replace')
+            item_description = item_description.decode()
+        except UnicodeEncodeError:
+            item_description = item_description.encode('utf-8')
+
+        return item_description
+
+    except AttributeError:
+        print("ERROR: No description found")
+        return "N/A"
+
+# Build message for minute email
+def get_min_msg(min_count, search_term, min_body):
+            
+    if min_count > 1:
+        subject = f"{search_term}: {min_count} new items"
+    else:
+        subject = f"{search_term}: {min_count} new item"
+    
+    min_body = "Please Provide Feedback: https://forms.gle/hEWHXaXJhrZFX7Dt6 \n\n" + min_body
+
+    return f'Subject: {subject}\n\n{min_body}'
+
+# Build message for five minute email
+def get_five_msg(five_count, search_term, five_body):
+            
+    if five_count > 1:
+        subject = f"{search_term}: {five_count} new items"
+    else:
+        subject = f"{search_term}: {five_count} new item"
+    
+    five_body = "Please Provide Feedback: https://forms.gle/hEWHXaXJhrZFX7Dt6 \n\n" + five_body
+
+    return f'Subject: {subject}\n\n{five_body}'
+
+# Build message for hourly email
+def get_hour_msg(hour_count, search_term, hour_body):
+            
+    if hour_count > 1:
+        subject = f"{search_term}: {hour_count} new items"
+    else:
+        subject = f"{search_term}: {hour_count} new item"
+    
+    hour_body = "Please Provide Feedback: https://forms.gle/hEWHXaXJhrZFX7Dt6 \n\n" + hour_body
+
+    return f'Subject: {subject}\n\n{hour_body}'
+
+# Build message for daily email
+def get_day_msg(day_count, search_term, day_body):
+            
+    if day_count > 1:
+        subject = f"{search_term}: {day_count} new items"
+    else:
+        subject = f"{search_term}: {day_count} new item"
+    
+    day_body = "Please Provide Feedback: https://forms.gle/hEWHXaXJhrZFX7Dt6 \n\n" + day_body
+
+    return f'Subject: {subject}\n\n{day_body}'
+
+def get_rest_time(min_email,five_email,hour_email, day_email):
+
+    if min_email:
+        time.sleep(60)
 
     elif five_email:
-        try:
-            time.sleep(300 - (end_time - start_time))
-        except ValueError:
-            time.sleep(300)
+        time.sleep(300)
 
     elif hour_email:  
-        try:
-            time.sleep(3600 - (end_time - start_time))
-        except ValueError:
-            time.sleep(3600)
+        time.sleep(3600)
 
     elif day_email:
-        try:
-            time.sleep(86400 - (end_time - start_time))
-        except ValueError:
-            time.sleep(86400)
+        time.sleep(86400)
 
-    else:
-        print("ERROR: NO EMAIL")
-        break
+
+
+
+if __name__ == "__main__":
+    main()
